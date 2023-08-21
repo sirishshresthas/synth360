@@ -1,20 +1,57 @@
-# Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+# Synthetic Data Generation for Benchmark for Managers Data
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+![Synthetic Data](https://example.com/synthetic_data_image.png)
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+## Table of Contents
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+- [Introduction](#introduction)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+- [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Generating Synthetic Data](#generating-synthetic-data)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+## Introduction
+
+The Benchmark for Managers dataset contains sensitive and confidential information that cannot be directly shared or used for certain purposes. Synthetic data generation addresses these privacy concerns by creating artificial data that closely mimics the statistical characteristics of the original dataset while not disclosing any real individual information. Furthermore, the data can be generated for other projects such as reporting, machine learning modeling, etc. This repository offers a synthetic data generation solution specifically tailored for the Benchmark for Managers dataset.
+
+## Getting Started
+
+### Prerequisites
+
+Before you can generate synthetic data, make sure you have the following:
+
+- Python 3.11+
+- Virtual environment (recommended)
+
+Conda is recommended for virtual environment which can be downloaded from https://docs.conda.io/projects/conda/en/latest/user-guide/install/download.html.
+
+
+
+### Installation
+
+1. Clone this repository to your local machine:
+
+All required packages are listed in conda.yml. To use the environment, use the command below. You can choose any name for virtual environment.
+
+```shell
+
+conda create -n vsynth -f conda.yml
+conda activate vsynth
+
+```
+
+If you prefer to use pip, you can use the command below that uses the requirements.txt file, which contains pip packages for the project
+
+```shell
+ pip install -r requirements.txt
+```
+
+
+## Usage
+
+## Roadmap

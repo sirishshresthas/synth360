@@ -1,0 +1,15 @@
+name: vsynth
+channels:
+  - conda-forge
+  - microsoft
+dependencies:
+  - python=3.11.4
+  - pip
+  - pandas
+  - numpy
+  - scikit-learn
+  - ctgan
+  - matplotlib
+  - python-dotenv
+  - tensorflow
+  - sdv
