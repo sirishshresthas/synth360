@@ -13,3 +13,4 @@ dependencies:
   - python-dotenv
   - tensorflow
   - sdv
+  - azure-storage-blob
