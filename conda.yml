@@ -5,12 +5,14 @@ channels:
 dependencies:
   - python=3.11.4
   - pip
+  - ipykernel
   - pandas
   - numpy
   - scikit-learn
   - ctgan
   - matplotlib
   - python-dotenv
-  - tensorflow
+  - tensorflow-gpu
   - sdv
   - azure-storage-blob
+  - cudatoolkit=11.8.0
