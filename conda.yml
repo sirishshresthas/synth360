@@ -16,3 +16,4 @@ dependencies:
   - sdv
   - azure-storage-blob
   - cudatoolkit=11.8.0
+  - statsmodels

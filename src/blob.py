@@ -4,7 +4,7 @@ from io import StringIO
 from dotenv import load_dotenv
 
 from azure.storage.blob import (BlobServiceClient, ContainerClient)
-from col_dtype import load_col_types
+from src.col_dtypes import load_col_types
 
 load_dotenv()
 
