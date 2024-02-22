@@ -17,3 +17,5 @@ dependencies:
   - azure-storage-blob
   - cudatoolkit=11.8.0
   - statsmodels
+  - pydantic=2.6.1
+  - pydantic-settings=2.1.0

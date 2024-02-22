@@ -211,7 +211,7 @@
   "BMK_D03_DiffChange": "float",
   "BMK_D04_Failure": "float",
   "BMK_D05_Narrow": "float",
-  "Start_Date": "datetime",
-  "ReportPrintedDateTime": "datetime",
+  "Start_Date": "str",
+  "ReportPrintedDateTime": "str",
   "BMK_Version": "int"
 }
