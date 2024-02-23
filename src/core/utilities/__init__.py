@@ -1,1 +1,1 @@
-import src.core.utilities.globals
+import src.core.utilities.globals as globals

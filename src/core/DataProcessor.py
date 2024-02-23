@@ -14,13 +14,13 @@ class DataProcessor(object):
         self._id_key = None
         self._demo_cols = []
         self._items_cols = []
-        self.df = self._load_data()
+        self.df: pd.DataFrame = None
 
     def __repr__(self):
         """
         Provides a string representation of the DataProcessor instance, including its class type and blob name.
         """
-        return f"{type(self.__class__.__name__)} {self.blob_name}"
+        return f"{type(self.__class__.__name__)} {self.data_name}"
 
     @property
     def rater_col_name(self) -> str:
@@ -63,12 +63,18 @@ class DataProcessor(object):
 
         return df
 
+    def get_data(self):
+        self.df = self._load_data()
+        return self.df
+
     def pivot_rater_data(self):
         df_self = self.df[self.df[self.rater_col_name].isin(['self', 'Self'])]
         df_self = self._remove_duplicates(
             df=df_self, id_key=self.id_key, items_only=True)
-        df_others = df_self = self.df[~self.df[self.rater_col_name].isin([
-                                                                         'self', 'Self'])]
+        df_others = self.df[~self.df[self.rater_col_name].isin(['self', 'Self'])]
+        
+        df_others = df_others.groupby([self.id_key, self.rater_col_name])[self.items_cols[1:]].mean()
+
 
         df_others = df_others.unstack(level=self.rater_col_name)
         df_others.columns = ['{}_{}'.format(col[0], col[1])
@@ -81,17 +87,27 @@ class DataProcessor(object):
         return df
 
     def _remove_duplicates(self, df: pd.DataFrame, id_key: str, items_only: bool = False, demo_cols_only: bool = False):
-
+        # Remove duplicates based on id_key, keeping the last occurrence
         df = df.drop_duplicates(subset=id_key, keep="last")
-
+        
+        # Adjust DataFrame based on flags
         if items_only and demo_cols_only:
-            df = df.loc[: self.demo_cols + self.items_cols]
+            # If both flags are True, filter to include both items and demo columns
+            df = df.loc[:, self.demo_cols + self.items_cols]
 
-        if items_only:
-            df = df[self.items_cols]
+        elif items_only:
+            # If items_only is True, filter to include only items columns
+            df = df.loc[:, self.items_cols]
 
-        if demo_cols_only:
-            df = df[self.demo_cols]
+        elif demo_cols_only:
+            # If demo_cols_only is True, filter to include only demo columns
+            df = df.loc[:, self.demo_cols]
+
+        print(df.columns)
+        return df
+
+
+
 
         return df
 

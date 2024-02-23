@@ -19,15 +19,13 @@ class LoadBlob(object):
         self.pkl_file: str = self.blob_name.split(".")[0] + ".pkl"
         self._local_filename: str = globals.DATA_DIR / blob_name
 
-        print(settings.AZURE_ACCOUNT_URL, flush=True)
-
         # Create a BlobServiceClient
         self.blob_service_client: BlobServiceClient = BlobServiceClient(
             account_url=settings.AZURE_ACCOUNT_URL,
             credential=settings.AZURE_BLOB_ACCESS_KEY)
 
         # Get a reference to the container
-        self.container_client: ContainerClient = blob_service_client.get_container_client(
+        self.container_client: ContainerClient = self.blob_service_client.get_container_client(
             settings.AZURE_CONTAINER_NAME)
 
     @property
@@ -41,6 +39,8 @@ class LoadBlob(object):
         return f"{type(self.__class__.__name__)} {self.blob_name}"
 
     def _load_csv_from_azure_storage(self) -> pd.DataFrame:
+
+        print(f"Downloading {self.blob_name}")
 
         # Get a reference to the blob
         blob_client = self.container_client.get_blob_client(self.blob_name)
@@ -57,12 +57,15 @@ class LoadBlob(object):
 
         self._cache_df(df)
 
+        print(f"Download complete")
+
         return df
 
     def _cache_df(self, df: pd.DataFrame) -> None:
-        os.mkdirs(globals.DATA_DIR, exist_ok=True)
+        os.makedirs(globals.DATA_DIR, exist_ok=True)
+        filepath: str = str(globals.DATA_DIR / self.pkl_file)
 
-        with open(globals.DATA_DIR / self.pkl_file, 'wb') as pkl:
+        with open(filepath, 'wb') as pkl:
             pickle.dump(df, pkl, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load_data(self) -> pd.DataFrame:
@@ -71,8 +74,7 @@ class LoadBlob(object):
 
             if not os.path.exists(self._local_filename):
 
-                data = self._load_csv_from_azure_storage(
-                    blob_name=self.blob_name)
+                data = self._load_csv_from_azure_storage()
                 return data
 
             else:
