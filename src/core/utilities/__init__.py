@@ -1,1 +1,1 @@
-from globals import * as globals
+import src.core.utilities.globals

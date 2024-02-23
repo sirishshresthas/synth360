@@ -1,4 +1,4 @@
 from pathlib import Path
 
 ROOT_DIR: Path = Path.cwd()
-DATA_DIR: str = str(ROOT_DIR / "data")
+DATA_DIR: Path = ROOT_DIR / "data"

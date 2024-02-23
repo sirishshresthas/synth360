@@ -4,7 +4,7 @@ import pickle
 from typing import Dict
 import pandas as pd
 from io import StringIO
-from src.utils import globals
+from src.core.utilities import globals
 from src.core.utilities.settings import settings
 
 from azure.storage.blob import (BlobServiceClient, ContainerClient)
@@ -18,6 +18,8 @@ class LoadBlob(object):
         self.blob_name = blob_name
         self.pkl_file: str = self.blob_name.split(".")[0] + ".pkl"
         self._local_filename: str = globals.DATA_DIR / blob_name
+
+        print(settings.AZURE_ACCOUNT_URL, flush=True)
 
         # Create a BlobServiceClient
         self.blob_service_client: BlobServiceClient = BlobServiceClient(
