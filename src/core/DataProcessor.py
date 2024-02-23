@@ -8,13 +8,13 @@ from src.core import LoadBlob
 
 class DataProcessor(object):
 
-    def __init__(self, data: str = "BMK_2018.csv"):
+    def __init__(self, data: str = "BMK_2018.csv", rater_col_name: str="RaterType", id_key:str = "ESI_Key"):
         self.data_name: str = data
-        self._rater_col_name = None
-        self._id_key = None
-        self._demo_cols = []
-        self._items_cols = []
-        self.df: pd.DataFrame = None
+        self._rater_col_name: str = rater_col_name
+        self._id_key: str = id_key
+        self._demo_cols: List = []
+        self._items_cols: List = []
+        self.df: pd.DataFrame = pd.DataFrame()
 
     def __repr__(self):
         """
@@ -58,6 +58,8 @@ class DataProcessor(object):
         blob = LoadBlob(self.data_name)
         df = blob.load_data()
 
+        df[self.rater_col_name] = df[self.rater_col_name].str.lower()
+
         if self.demo_cols and self.items_cols:
             df = df.loc[:, self.demo_cols + self.items_cols]
 
@@ -67,13 +69,13 @@ class DataProcessor(object):
         self.df = self._load_data()
         return self.df
 
-    def pivot_rater_data(self):
-        df_self = self.df[self.df[self.rater_col_name].isin(['self', 'Self'])]
+    def pivot_rater_data(self, skip=2):
+        df_self = self.df[self.df[self.rater_col_name] == 'self']
         df_self = self._remove_duplicates(
             df=df_self, id_key=self.id_key, items_only=True)
-        df_others = self.df[~self.df[self.rater_col_name].isin(['self', 'Self'])]
+        df_others = self.df[self.df[self.rater_col_name] != 'self']
         
-        df_others = df_others.groupby([self.id_key, self.rater_col_name])[self.items_cols[1:]].mean()
+        df_others = df_others.groupby([self.id_key, self.rater_col_name])[self.items_cols[skip:]].mean()
 
 
         df_others = df_others.unstack(level=self.rater_col_name)
@@ -86,32 +88,29 @@ class DataProcessor(object):
 
         return df
 
-    def _remove_duplicates(self, df: pd.DataFrame, id_key: str, items_only: bool = False, demo_cols_only: bool = False):
+    def _remove_duplicates(self, df: pd.DataFrame, id_key: str = 'ESI_Key', items_only: bool = False, demo_cols_only: bool = False):
         # Remove duplicates based on id_key, keeping the last occurrence
         df = df.drop_duplicates(subset=id_key, keep="last")
-        
-        # Adjust DataFrame based on flags
-        if items_only and demo_cols_only:
-            # If both flags are True, filter to include both items and demo columns
-            df = df.loc[:, self.demo_cols + self.items_cols]
 
-        elif items_only:
+        if items_only:
+            if not self.items_cols:
+                raise ValueError(f"Items columns list is empty") 
             # If items_only is True, filter to include only items columns
             df = df.loc[:, self.items_cols]
 
         elif demo_cols_only:
+            if not self.demo_cols:
+                raise ValueError(f"Demographic columns list is empty") 
             # If demo_cols_only is True, filter to include only demo columns
             df = df.loc[:, self.demo_cols]
 
-        print(df.columns)
-        return df
-
-
-
+        if items_only and demo_cols_only:
+            # If both flags are True, filter to include both items and demo columns
+            df = df.loc[:, self.demo_cols + self.items_cols]
 
         return df
 
-    def filter_data_with_all_raters(self, remove_other_raters: bool = True, remove_rater_list: List = ['Superior', 'Other']) -> pd.DataFrame:
+    def filter_data_with_all_raters(self, remove_other_raters: bool = True, remove_rater_list: List = ['superior', 'other']) -> pd.DataFrame:
 
         unique_rater_counts = self.df.groupby(
             self.id_key)[self.rater_col_name].nunique()
@@ -127,24 +126,9 @@ class DataProcessor(object):
 
         return self.df
 
-    def median_rater_counts(self, id_key: str = "ESI_Key", rater_col_name: str = "RaterType"):
+    def median_rater_counts(self):
 
-        if not self.rater_col_name:
-            self.rater_col_name = rater_col_name
-
-        if self.rater_col_name not in self.df.columns:
-            raise ValueError(
-                f"The rater column {self.rater_col_name} does not exist in the data.")
-
-        if not self.id_key:
-            self.id_key = id_key
-
-        if self.id_key not in self.df.columns:
-            raise ValueError(
-                f"The rater column {self.id_key} does not exist in the data.")
-
-        filtered_df = self.df[~self.df[self.rater_col_name].isin(
-            ['self', 'Self'])]
+        filtered_df = self.df[self.df[self.rater_col_name] != 'self']
 
         rater_counts = filtered_df.groupby(
             [self.id_key, self.rater_col_name]).size().unstack(fill_value=0)
