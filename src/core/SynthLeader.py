@@ -125,6 +125,22 @@ class SynthLeader(object):
             synthesizer.save(filepath=model_name)
 
         return synthesizer
+    
+    
+    def train_var_autoencoder(self, model_name: str = 'bmk2018_var_autoencoder.pkl'):
+        ## todo:
+        ## create autoencoder model with demographics
+    
+    
+    def train_copula_gan_synthesizer(self, model_name: str = ''): 
+        
+        ## todo: 
+        ## create copula GAN synthesizer
+        
+        
+    def gan_hyperparameter_tuning(self): 
+        ## todo: 
+        ## create grid-search hyperparameter tuning
 
 
     def generate_synthetic_sample(self, synthesizer, num_rows: int = 100):
