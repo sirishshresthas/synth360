@@ -76,10 +76,3 @@ def test_col_distributions(data, alpha=0.05):
     results_df = pd.DataFrame(results_data, columns=results_columns)
 
     return results_df
-
-# Example usage:
-# Assuming 'df' is your pandas DataFrame
-# results = test_distributions(df)
-
-# Print the results
-# print(results)
