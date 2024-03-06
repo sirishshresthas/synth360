@@ -4,18 +4,20 @@ channels:
   - microsoft
 dependencies:
   - python=3.11.4
-  - pip
+  - pydantic=2.6.1
+  - pydantic-settings=2.1.0
+  - scikit-learn
+  - statsmodels
   - ipykernel
   - pandas
   - numpy
-  - scikit-learn
+  - sdv
   - ctgan
   - matplotlib
-  - python-dotenv
   - tensorflow-gpu
-  - sdv
   - azure-storage-blob
-  - cudatoolkit=11.8.0
-  - statsmodels
-  - pydantic=2.6.1
-  - pydantic-settings=2.1.0
+  - cudatoolkit
+  - pip
+  - pip: 
+    - nbformat
+
