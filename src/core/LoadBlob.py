@@ -78,7 +78,12 @@ class LoadBlob(object):
                 return data
 
             else:
-                with open(globals.DATA_DIR / self.pkl_file, 'rb') as pkl:
+                pkl_file = globals.DATA_DIR / self.pkl_file
+
+                if not os.path.exists(pkl_file):
+                    data = self._load_csv_from_azure_storage()
+                    
+                with open(pkl_file, 'rb') as pkl:
                     data = pickle.load(pkl)
                     return data
 
