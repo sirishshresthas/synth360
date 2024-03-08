@@ -185,7 +185,6 @@ class SynthLeader(object):
         model.fit(self.df)
 
         synthetic_data = model.sample(len(self.df))
-        score = your_evaluation_metric(self.df, synthetic_data) 
 
         return {'loss': -score, 'status': STATUS_OK}  
     
