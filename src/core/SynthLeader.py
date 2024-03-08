@@ -11,7 +11,7 @@ from src.core.utilities import globals
 from sdv.evaluation.single_table import get_column_plot
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
-
+from hyperopt import hp, STATUS_OK, fmin, tpe, Trials
 
 class SynthLeader(object):
 
@@ -69,23 +69,18 @@ class SynthLeader(object):
     def train_synthesizer(self, Model: CopulaGANSynthesizer | CTGANSynthesizer | GaussianCopulaSynthesizer, model_name: str = '', force: bool = False, params: Dict[str, Any] = {}):
         if model_name != '':
             model_name = str(globals.DATA_DIR / model_name)
-
-        if os.path.exists(model_name):
-            if force:
-                synthesizer = Model(**params)
-
-            else:
-
-                synthesizer = Model.load(
-                    filepath=model_name)
+                    
+        if not os.path.exists(model_name) or force:
+            print("Retraining model")
+            synthesizer = Model(**params)
+            synthesizer.fit(self.df)
 
         else:
-            synthesizer = Model(**params)
-
-        synthesizer.fit(self.df)
-
-        if model_name:
-            synthesizer.save(filepath=model_name)
+            print("Loading existing model")
+            synthesizer = Model.load(
+                filepath=model_name)
+            
+        synthesizer.save(filepath=model_name)
 
         return synthesizer
 
@@ -105,7 +100,7 @@ class SynthLeader(object):
 
         return synthesizer
 
-    def train_ctgan_synthesizer(self, model_name: str = '', epochs=500, enforce_rounding=True, enforce_min_max_values=True, verbose=True, force=False):
+    def train_ctgan_synthesizer(self, model_name: str = '', epochs=500, enforce_rounding=True, enforce_min_max_values=True, verbose=True, force=False, batch_size: int = 512):
 
         params = {
             "metadata": self.metadata,
@@ -113,7 +108,10 @@ class SynthLeader(object):
             "enforce_rounding": enforce_rounding,
             "enforce_min_max_values": enforce_min_max_values,
             "verbose": verbose,
-            "cuda": torch.cuda.is_available()
+            "cuda": torch.cuda.is_available(),
+            # hyperparameters
+            "batch_size": batch_size,
+            "pac": 8
         }
 
         synthesizer: CTGANSynthesizer = self.train_synthesizer(
@@ -143,11 +141,55 @@ class SynthLeader(object):
 
         return synthesizer
 
-    def gan_hyperparameter_tuning(self):
-        # todo:
-        # create grid-search hyperparameter tuning
-        pass
+    def tune_hyperparameters(self, 
+                             epochs: List = [500, 700, 1000], 
+                             batch_size: List = [128, 256], 
+                             generator_dim: List = [(64, 64), (128, 128), (256, 256)],
+                             discriminator_dim: List = [(64, 64), (128, 128), (256, 256)], 
+                             discriminator_decay=[0, 0.0001, 0.001, 0.01, 0.1]
+        ):
+        
+        
+        space = {
+            'epochs': hp.choice('epochs', epochs),
+            'generator_lr': hp.loguniform('generator_lr', -10, -1), # this goes from e^-10 to e^-1
+            'discriminator_lr': hp.loguniform('discriminator_lr', -10, -1),
+            'generator_dim': hp.choice('generator_dim', generator_dim),
+            'discriminator_dim': hp.choice('discriminator_dim', discriminator_dim),
+            'discriminator_decay': hp.choice('discriminator_decay', discriminator_decay),
+            'batch_size': hp.choice('batch_size', batch_size)
+        }
 
+        trials = Trials()
+        best = fmin(fn=self.objective,
+                    space=space,
+                    algo=tpe.suggest,
+                    max_evals=50,
+                    trials=trials)
+
+        print("Best hyperparameters:", best)
+        return best
+
+    def objective(self,params):
+        model = CTGANSynthesizer( metadata=self.metadata,
+                                  generator_dim=params['generator_dim'],
+                                  discriminator_dim=params['discriminator_dim'],
+                                  generator_lr=params['generator_lr'],
+                                  discriminator_lr=params['discriminator_lr'],
+                                  batch_size=int(params['batch_size']),
+                                  discriminator_decay=params['discriminator_decay'],
+                                  epochs=int(params['epochs']),
+                                  cuda=torch.cuda.is_available(),
+                                  pac=8)
+
+        model.fit(self.df)
+
+        synthetic_data = model.sample(len(self.df))
+        score = your_evaluation_metric(self.df, synthetic_data) 
+
+        return {'loss': -score, 'status': STATUS_OK}  
+    
+    
     def generate_synthetic_sample(self, synthesizer, num_rows: int = 100):
         return synthesizer.sample(num_rows=num_rows)
 
