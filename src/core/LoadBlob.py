@@ -27,7 +27,7 @@ class LoadBlob(object):
         # Get a reference to the container
         self.container_client: ContainerClient = self.blob_service_client.get_container_client(
             settings.AZURE_CONTAINER_NAME)
-
+        
     @property
     def data_name(self):
         return self.blob_name
@@ -94,3 +94,22 @@ class LoadBlob(object):
             print("Error: File not found. Verify the file path.")
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
+
+            
+            
+    def upload_data(self, content, name: str) -> None:
+        """
+        Uploads data to Azure Blob Storage after converting it to CSV format.
+        """
+        try:
+
+            blob_client = self.container_client.get_blob_client(name)
+
+            blob_client.upload_blob(content, overwrite=True)
+
+            print(f"{name} uploaded")
+
+        except Exception as e:
+            print(f"An unexpected error occurred during upload: {e}")
+
+        

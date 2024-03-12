@@ -21,4 +21,6 @@ dependencies:
   - pip: 
     - nbformat
     - hyperopt
+    - kaleido
+    - seaborn
 

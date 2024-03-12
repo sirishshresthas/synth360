@@ -3,15 +3,18 @@ import math
 import torch
 import numpy as np
 import pandas as pd
-from typing import Any, List, Dict, Optional, Union
+from typing import Any, List, Dict, Optional
 from sdv.metadata import SingleTableMetadata
 from sdv.single_table import GaussianCopulaSynthesizer, CTGANSynthesizer, CopulaGANSynthesizer
 from sdv.evaluation.single_table import run_diagnostic, evaluate_quality
 from src.core.utilities import globals
 from sdv.evaluation.single_table import get_column_plot
-import plotly.graph_objs as go
+import plotly.io as pio
 from plotly.subplots import make_subplots
 from hyperopt import hp, STATUS_OK, fmin, tpe, Trials
+import plotly.graph_objects as go
+import plotly.io as pio
+
 
 class SynthLeader(object):
 
@@ -47,8 +50,12 @@ class SynthLeader(object):
         return matrix
 
     def style_correlation_matrix(self, matrix, style="coolwarm"):
+        styled_matrix = matrix \
+            .style \
+            .background_gradient(cmap=style) \
+            .format(precision=3)
 
-        return matrix.style.background_gradient(cmap=style)
+        return styled_matrix
 
     def create_metadata(self) -> SingleTableMetadata:
         metadata: SingleTableMetadata = SingleTableMetadata()
@@ -69,7 +76,7 @@ class SynthLeader(object):
     def train_synthesizer(self, Model: CopulaGANSynthesizer | CTGANSynthesizer | GaussianCopulaSynthesizer, model_name: str = '', force: bool = False, params: Dict[str, Any] = {}):
         if model_name != '':
             model_name = str(globals.DATA_DIR / model_name)
-                    
+
         if not os.path.exists(model_name) or force:
             print("Retraining model")
             synthesizer = Model(**params)
@@ -79,7 +86,7 @@ class SynthLeader(object):
             print("Loading existing model")
             synthesizer = Model.load(
                 filepath=model_name)
-            
+
         synthesizer.save(filepath=model_name)
 
         return synthesizer
@@ -141,18 +148,20 @@ class SynthLeader(object):
 
         return synthesizer
 
-    def tune_hyperparameters(self, 
-                             epochs: List = [500, 700, 1000], 
-                             batch_size: List = [128, 256], 
-                             generator_dim: List = [(64, 64), (128, 128), (256, 256)],
-                             discriminator_dim: List = [(64, 64), (128, 128), (256, 256)], 
+    def tune_hyperparameters(self,
+                             epochs: List = [500, 700, 1000],
+                             batch_size: List = [128, 256],
+                             generator_dim: List = [
+                                 (64, 64), (128, 128), (256, 256)],
+                             discriminator_dim: List = [
+                                 (64, 64), (128, 128), (256, 256)],
                              discriminator_decay=[0, 0.0001, 0.001, 0.01, 0.1]
-        ):
-        
-        
+                             ):
+
         space = {
             'epochs': hp.choice('epochs', epochs),
-            'generator_lr': hp.loguniform('generator_lr', -10, -1), # this goes from e^-10 to e^-1
+            # this goes from e^-10 to e^-1
+            'generator_lr': hp.loguniform('generator_lr', -10, -1),
             'discriminator_lr': hp.loguniform('discriminator_lr', -10, -1),
             'generator_dim': hp.choice('generator_dim', generator_dim),
             'discriminator_dim': hp.choice('discriminator_dim', discriminator_dim),
@@ -170,25 +179,25 @@ class SynthLeader(object):
         print("Best hyperparameters:", best)
         return best
 
-    def objective(self,params):
-        model = CTGANSynthesizer( metadata=self.metadata,
-                                  generator_dim=params['generator_dim'],
-                                  discriminator_dim=params['discriminator_dim'],
-                                  generator_lr=params['generator_lr'],
-                                  discriminator_lr=params['discriminator_lr'],
-                                  batch_size=int(params['batch_size']),
-                                  discriminator_decay=params['discriminator_decay'],
-                                  epochs=int(params['epochs']),
-                                  cuda=torch.cuda.is_available(),
-                                  pac=8)
+    def objective(self, params):
+        model = CTGANSynthesizer(metadata=self.metadata,
+                                 generator_dim=params['generator_dim'],
+                                 discriminator_dim=params['discriminator_dim'],
+                                 generator_lr=params['generator_lr'],
+                                 discriminator_lr=params['discriminator_lr'],
+                                 batch_size=int(params['batch_size']),
+                                 discriminator_decay=params['discriminator_decay'],
+                                 epochs=int(params['epochs']),
+                                 cuda=torch.cuda.is_available(),
+                                 pac=8)
 
         model.fit(self.df)
 
         synthetic_data = model.sample(len(self.df))
+        score = None
 
-        return {'loss': -score, 'status': STATUS_OK}  
-    
-    
+        return {'loss': -score, 'status': STATUS_OK}
+
     def generate_synthetic_sample(self, synthesizer, num_rows: int = 100):
         return synthesizer.sample(num_rows=num_rows)
 
@@ -211,7 +220,42 @@ class SynthLeader(object):
 
         return quality
 
-    def visualize_data(self, synthetic_data, column_names: str | List):
+    def visualize_cumsum(self, synthetic_data, column_names: str | List, fig_name: Optional[str] = ''):
+        if isinstance(column_names, str):
+            column_names = [column_names]
+
+        total_plots = len(column_names)
+        rows = math.ceil(math.sqrt(total_plots))
+        cols = math.ceil(total_plots / rows)
+
+        fig = make_subplots(rows=rows, cols=cols, subplot_titles=column_names)
+
+        for i, c in enumerate(column_names):
+            cumsum_real = self.df[c].cumsum()
+            cumsum_synthetic = synthetic_data[c].cumsum()
+
+            # Line plot for real data
+            real_trace = go.Scatter(
+                x=cumsum_real.index, y=cumsum_real, mode='lines', name='Real Data')
+
+            # Line plot for synthetic data
+            synthetic_trace = go.Scatter(
+                x=cumsum_synthetic.index, y=cumsum_synthetic, mode='lines', name='Synthetic Data')
+
+            fig.add_trace(real_trace, row=(i // cols) + 1, col=(i % cols) + 1)
+            fig.add_trace(synthetic_trace, row=(
+                i // cols) + 1, col=(i % cols) + 1)
+
+        fig.update_layout(height=rows * 300, width=cols * 300,
+                          title_text="Cumulative Sums of feature")
+
+        if fig_name != '':
+            fig_name = f"./data/figures/{fig_name}"
+            pio.write_image(fig, format="png", file=fig_name)
+
+        return fig
+
+    def visualize_data(self, synthetic_data, column_names: str | List, fig_name: Optional[str] = ''):
 
         if isinstance(column_names, str):
             column_names = [column_names]
@@ -224,12 +268,12 @@ class SynthLeader(object):
 
         for i, c in enumerate(column_names):
             column_fig = get_column_plot(
-                    real_data=self.df,
-                    synthetic_data=synthetic_data,
-                    column_name=c,
-                    metadata=self.metadata
-                )
-            
+                real_data=self.df,
+                synthetic_data=synthetic_data,
+                column_name=c,
+                metadata=self.metadata
+            )
+
             for trace in column_fig.data:
                 fig.add_trace(
                     trace,
@@ -237,8 +281,14 @@ class SynthLeader(object):
                     col=(i % cols) + 1
                 )
 
-        fig.update_layout(height=rows * 300, width=cols * 300, title_text="Column Plots")
-        fig.show()
+        fig.update_layout(height=rows * 300, width=cols *
+                          300, title_text="Column Plots")
+
+        if fig_name != '':
+            fig_name = f"./data/figures/{fig_name}"
+            pio.write_image(fig, format="png", file=fig_name)
+
+        return fig
 
     def get_corr_diff(self, corr_a, corr_b):
 
