@@ -108,6 +108,13 @@ class SynthLeader(object):
         return synthesizer
 
     def train_ctgan_synthesizer(self, model_name: str = '', epochs=500, enforce_rounding=True, enforce_min_max_values=True, verbose=True, force=False, batch_size: int = 512):
+        
+        pac: int = 10
+        
+        for diviser in (10, 8): 
+            if batch_size % diviser == 0:
+                pac = diviser
+                break
 
         params = {
             "metadata": self.metadata,
@@ -118,7 +125,7 @@ class SynthLeader(object):
             "cuda": torch.cuda.is_available(),
             # hyperparameters
             "batch_size": batch_size,
-            "pac": 8
+            "pac": pac
         }
 
         synthesizer: CTGANSynthesizer = self.train_synthesizer(
@@ -131,7 +138,14 @@ class SynthLeader(object):
         # create autoencoder model with demographics
         pass
 
-    def train_copula_gan_synthesizer(self, model_name: str = '', enforce_min_max_value: bool = True, enforce_rounding: bool = False, numerical_distributions: Dict[str, Any] = {}, epochs: int = 500, verbose: bool = True, force: bool = False):
+    def train_copula_gan_synthesizer(self, model_name: str = '', enforce_min_max_value: bool = True, enforce_rounding: bool = False, numerical_distributions: Dict[str, Any] = {}, epochs: int = 500, verbose: bool = True, force: bool = False, batch_size: int = 512):
+        
+        pac: int = 10
+        
+        for diviser in (10, 8): 
+            if batch_size % diviser == 0:
+                pac = diviser
+                break
 
         params = {
 
@@ -140,7 +154,9 @@ class SynthLeader(object):
             "enforce_rounding": enforce_rounding,
             "numerical_distributions": numerical_distributions,
             "epochs": epochs,
-            "verbose": verbose
+            "verbose": verbose, 
+            "batch_size": batch_size, 
+            "pac": pac
         }
 
         synthesizer: CopulaGANSynthesizer = self.train_synthesizer(
@@ -194,6 +210,8 @@ class SynthLeader(object):
         model.fit(self.df)
 
         synthetic_data = model.sample(len(self.df))
+        
+        ## need evaluation method
         score = None
 
         return {'loss': -score, 'status': STATUS_OK}
