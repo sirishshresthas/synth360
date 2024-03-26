@@ -1,8 +1,7 @@
 import pandas as pd
 from typing import List
 from src.core import LoadBlob
-from scipy.stats import entropy
-import numpy as np
+import pingouin as pg
 
 
 class DataProcessor(object):
@@ -68,21 +67,27 @@ class DataProcessor(object):
         self.df = self._load_data()
         return self.df
 
-    def save_data(self, df: pd.DataFrame, name: str):
-        self.blob.upload_data(df, name)
+    def save_data(self, df: pd.DataFrame, name: str, folder: str):
+        self.blob.upload_data(df, name, folder)
 
-    def pivot_rater_data(self, skip=2):
+    def pivot_rater_data(self):
         df_self = self.df[self.df[self.rater_col_name] == 'self']
+
         df_self = self._remove_duplicates(
             df=df_self, id_key=self.id_key, items_only=True)
+
         df_others = self.df[self.df[self.rater_col_name] != 'self']
 
+        # df_others = df_others.groupby([self.id_key, self.rater_col_name])[
+        #     self.items_cols[skip:]].mean()
         df_others = df_others.groupby([self.id_key, self.rater_col_name])[
-            self.items_cols[skip:]].mean()
+            self.items_cols].mean()
 
         df_others = df_others.unstack(level=self.rater_col_name)
         df_others.columns = ['{}_{}'.format(col[0], col[1])
                              for col in df_others.columns]
+        
+        print(df_others.columns)
 
         df = pd.merge(df_self, df_others, on=self.id_key, how="left")
 
@@ -94,21 +99,21 @@ class DataProcessor(object):
         # Remove duplicates based on id_key, keeping the last occurrence
         df = df.drop_duplicates(subset=id_key, keep="last")
 
-        if items_only:
-            if not self.items_cols:
-                raise ValueError(f"Items columns list is empty")
-            # If items_only is True, filter to include only items columns
-            df = df.loc[:, self.items_cols]
+        # if items_only:
+        #     if not self.items_cols:
+        #         raise ValueError(f"Items columns list is empty")
+        #     # If items_only is True, filter to include only items columns
+        #     df = df.loc[:, self.items_cols]
 
-        elif demo_cols_only:
-            if not self.demo_cols:
-                raise ValueError(f"Demographic columns list is empty")
-            # If demo_cols_only is True, filter to include only demo columns
-            df = df.loc[:, self.demo_cols]
+        # elif demo_cols_only:
+        #     if not self.demo_cols:
+        #         raise ValueError(f"Demographic columns list is empty")
+        #     # If demo_cols_only is True, filter to include only demo columns
+        #     df = df.loc[:, self.demo_cols]
 
-        if items_only and demo_cols_only:
-            # If both flags are True, filter to include both items and demo columns
-            df = df.loc[:, self.demo_cols + self.items_cols]
+        # if items_only and demo_cols_only:
+        #     # If both flags are True, filter to include both items and demo columns
+        #     df = df.loc[:, self.demo_cols + self.items_cols]
 
         return df
 
@@ -140,52 +145,49 @@ class DataProcessor(object):
 
     def calculate_statistics(self, data):
         stats = {
-            'mean': pd.Series(data.mean(numeric_only=True)),
-            'std': pd.Series(data.std(numeric_only=True)),
-            'kurtosis': pd.Series(data.kurtosis(numeric_only=True)), # Fisher's definition (normal ==> 0.0)
-            'skewness': pd.Series(data.skew(numeric_only=True)),
-            'max': pd.Series(data.max()),
-            'min': pd.Series(data.min()),
-            'q1': pd.Series(data.quantile(0.25)),
-            'q3': pd.Series(data.quantile(0.75))
+            'Min': round(pd.Series(data.min()),3),
+            'Max': round(pd.Series(data.max()),3),
+            'Median': round(pd.Series(data.median()),3),
+            'Mean': round(pd.Series(data.mean(numeric_only=True)),3),
+            'SD': round(pd.Series(data.std(numeric_only=True)),3),
+            'kurtosis': round(pd.Series(data.kurtosis(numeric_only=True)),3),
+            'skewness': round(pd.Series(data.skew(numeric_only=True)),3)
         }
 
-        # entropy_values = {}
-        # for column_name in data.columns:
-        #     entropy_values[column_name] = entropy(data[column_name].value_counts(normalize=True), base=2)
-        
-        # stats['entropy'] = pd.Series(entropy_values)
-
-        # gini_values = {}
-        # for column_name in data.columns: 
-        #     gini_values[column_name] = self.gini_coefficient(data[column_name])
-
-        # stats['gini'] = pd.Series(gini_values)
         return stats
-
-    def gini_coefficient(self, data):
-        """Calculate the Gini coefficient of a numpy array."""
-        data = np.sort(data)
-        n = len(data)
-        index = np.arange(1, n+1)
-
-        return (np.sum((2 * index - n - 1) * data)) / (n * np.sum(data))
 
     def compare_datasets(self, real_data, synthetic_data, columns):
-        real_stats = self.calculate_statistics(real_data[columns])
-        synthetic_stats = self.calculate_statistics(synthetic_data[columns])
+        real_stats = pd.DataFrame(self.calculate_statistics(real_data[columns]))
+        synthetic_stats = pd.DataFrame(self.calculate_statistics(synthetic_data[columns]))
 
-        # real_stats['gini'] = self.gini_coefficient(real_data[columns])
-        # synthetic_stats['gini'] = self.gini_coefficient(synthetic_data[columns])
+        cd = {}
 
-        differences = {stat: real_stats[stat] -
-                       synthetic_stats[stat] for stat in real_stats}
-        
-        
-        stats = pd.concat([
-            pd.DataFrame(real_stats),
-            pd.DataFrame(synthetic_stats),
-            pd.DataFrame(differences)
-        ], keys=['Real', 'Synthetic', 'Differences'], axis=1)
+        for column in columns: 
+            cohens_d = pg.compute_effsize(
+                real_data[column], synthetic_data[column], paired=False, eftype='cohen')
+            cd[column] = round(cohens_d, 3)
 
-        return stats
+        synthetic_stats["Cohen's d"] = cd
+
+        synthetic_stats.index = synthetic_stats.index.map(lambda x: x + "_synth")
+        real_stats.index = real_stats.index.map(lambda x: x + "_real")
+
+        stats = pd.concat([real_stats, synthetic_stats]
+                              ).sort_index()
+
+        return stats, real_stats, synthetic_stats
+
+        # # interleave the dataframes
+        # result_df = pd.concat([pd.concat([row1, row2], axis=1).T for row1, row2 in zip(
+        #     real_stats.values, synthetic_stats.values)])
+
+        # # Reset index
+        # result_df.reset_index(drop=True, inplace=True)
+
+        # # stats = pd.concat([
+        # #     pd.DataFrame(real_stats),
+        # #     pd.DataFrame(synthetic_stats),
+        # #     pd.DataFrame(differences)
+        # # ], keys=['Real', 'Synthetic', 'Differences'], axis=1)
+
+        # return result_df
