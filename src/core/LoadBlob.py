@@ -1,9 +1,6 @@
 import os
-import json
 import pickle
-from typing import Dict
 import pandas as pd
-from io import StringIO
 from src.core.utilities import globals
 from src.core.utilities.settings import settings
 
@@ -27,7 +24,7 @@ class LoadBlob(object):
         # Get a reference to the container
         self.container_client: ContainerClient = self.blob_service_client.get_container_client(
             settings.AZURE_CONTAINER_NAME)
-        
+
     @property
     def data_name(self):
         return self.blob_name
@@ -82,7 +79,7 @@ class LoadBlob(object):
 
                 if not os.path.exists(pkl_file):
                     data = self._load_csv_from_azure_storage()
-                    
+
                 with open(pkl_file, 'rb') as pkl:
                     data = pickle.load(pkl)
                     return data
@@ -95,13 +92,12 @@ class LoadBlob(object):
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
 
-            
-            
-    def upload_data(self, content, name: str) -> None:
+    def upload_data(self, content, name: str, folder: str = "") -> None:
         """
         Uploads data to Azure Blob Storage after converting it to CSV format.
         """
         try:
+            name = f"{folder}/{name}"
 
             blob_client = self.container_client.get_blob_client(name)
 
@@ -111,5 +107,3 @@ class LoadBlob(object):
 
         except Exception as e:
             print(f"An unexpected error occurred during upload: {e}")
-
-        
