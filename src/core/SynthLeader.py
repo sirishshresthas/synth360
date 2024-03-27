@@ -3,27 +3,66 @@ import math
 import torch
 import numpy as np
 import pandas as pd
+from pathlib import Path
 from typing import Any, List, Dict, Optional
+
 from sdv.metadata import SingleTableMetadata
 from sdv.single_table import GaussianCopulaSynthesizer, CTGANSynthesizer, CopulaGANSynthesizer
 from sdv.evaluation.single_table import run_diagnostic, evaluate_quality
-from src.core.utilities import globals
-from sdv.evaluation.single_table import get_column_plot
+from sdv.evaluation.single_table import get_column_plot, DiagnosticReport, QualityReport
+
 import plotly.io as pio
-from plotly.subplots import make_subplots
-# from hyperopt import hp, STATUS_OK, fmin, tpe, Trials
 import plotly.graph_objects as go
-import plotly.io as pio
-from pathlib import Path
+from plotly.subplots import make_subplots
+
+from table_evaluator import TableEvaluator
+# from hyperopt import hp, STATUS_OK, fmin, tpe, Trials
 
 
 class SynthLeader(object):
+    """
+    A class to encapsulate functionality for leading synthetic data generation efforts using various synthesizers.
 
-    def __init__(self, df: pd.DataFrame, name: str = ''):
+    Attributes:
+        df (pd.DataFrame): The original dataframe to synthesize.
+        name (str): An optional name for the instance, useful for identification.
+        data_dir (Path): The base directory for data-related storage.
+        models_dir (Optional[Path]): Directory to store trained models.
+        figures_dir (Optional[Path]): Directory to store figures.
+        metadata_dir (Optional[Path]): Directory to store metadata.
+
+    Methods:
+        create_metadata(): Creates and validates metadata from the dataframe.
+        update_metadata(cols, sdtype): Updates the metadata for specified columns.
+        train_synthesizer(): Trains a specified synthesizer model with optional parameters.
+        train_copula_synthesizer(): Convenience method to train a Gaussian Copula Synthesizer.
+        train_ctgan_synthesizer(): Convenience method to train a CTGAN Synthesizer.
+        train_copula_gan_synthesizer(): Convenience method to train a CopulaGAN Synthesizer.
+        generate_synthetic_sample(): Generates a synthetic sample from a trained model.
+        run_diagnostic(): Runs diagnostics to compare real and synthetic data.
+        run_evaluation(): Evaluates the quality of synthetic data against real data.
+        visualize_evaluation(): Visualizes evaluation metrics and saves the plots.
+        visualize_cumsum(): Visualizes cumulative sums for given columns.
+        visualize_data(): Generates and visualizes column plots for real vs. synthetic data.
+        get_corr_diff(): Calculates the difference between two correlation matrices.
+    """
+
+    def __init__(self, df: pd.DataFrame, name: str = '') -> None:
+        """
+        Initializes the SynthLeader instance with a dataframe and optional name.
+
+        Parameters:
+            df (pd.DataFrame): The dataframe to be synthesized.
+            name (str): An optional name for the instance.
+        """
         self.df = df
         self.name = name
 
         self.data_dir = Path("./data/")
+        self.models_dir: Optional[Path] = None
+        self.figures_dir: Optional[Path] = None
+        self.metadata_dir: Optional[Path] = None
+
         self.sub_dirs = ['models', 'figures', 'metadata']
 
         for sub_dir in self.sub_dirs:
@@ -33,23 +72,39 @@ class SynthLeader(object):
 
         self._metadata: SingleTableMetadata = self.create_metadata()
         print(
-            f"GPU: {torch.cuda.is_available() or torch.backends.mps.is_available()}")
+            f"GPU: {torch.cuda.is_available()}")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
-        Provides a string representation of the SynthLeader instance, including its class type and data name.
+        Provides a string representation of the SynthLeader instance.
+
+        Returns:
+            str: A string that represents the SynthLeader instance.
         """
         return f"{type(self.__class__.__name__)} {self.name}"
 
     @property
     def metadata(self) -> SingleTableMetadata:
+        """A property that returns the metadata of the DataFrame."""
         return self._metadata
 
     @metadata.setter
     def metadata(self, metadata: SingleTableMetadata) -> None:
+        """
+        Sets the metadata for the DataFrame.
+
+        Parameters:
+            metadata (SingleTableMetadata): The metadata to set for the DataFrame.
+        """
         self._metadata = metadata
 
     def create_metadata(self) -> SingleTableMetadata:
+        """
+        Creates and returns metadata from the DataFrame.
+
+        Returns:
+            SingleTableMetadata: The generated metadata from the DataFrame.
+        """
         metadata: SingleTableMetadata = SingleTableMetadata()
 
         metadata.detect_from_dataframe(self.df)
@@ -59,17 +114,41 @@ class SynthLeader(object):
         return metadata
 
     def _get_numeric_cols(self) -> List[str]:
+        """
+        Identifies and returns a list of numeric columns in the DataFrame.
+
+        Returns:
+            List[str]: A list of column names that are numeric.
+        """
         cols = self.df.select_dtypes(
             include=[np.number]).columns.to_list()  # type: ignore
         return cols
 
-    def generate_corr_matrix(self, df: pd.DataFrame):
+    def generate_corr_matrix(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generates a correlation matrix for the numeric columns of the DataFrame.
 
+        Parameters:
+            df (pd.DataFrame): The DataFrame for which to generate the correlation matrix.
+
+        Returns:
+            pd.DataFrame: The correlation matrix.
+        """
         matrix = df[self._get_numeric_cols()].corr()
 
         return matrix
 
-    def style_correlation_matrix(self, matrix, style="coolwarm"):
+    def style_correlation_matrix(self, matrix, style="coolwarm") -> pd.DataFrame:
+        """
+        Applies styling to a correlation matrix DataFrame.
+
+        Parameters:
+            matrix (pd.DataFrame): The correlation matrix to style.
+            style (str): The matplotlib colormap to use for background gradient.
+
+        Returns:
+            pd.Styler: The styled correlation matrix.
+        """
         styled_matrix = matrix \
             .style \
             .background_gradient(cmap=style) \
@@ -77,7 +156,14 @@ class SynthLeader(object):
 
         return styled_matrix
 
-    def update_metadata(self, cols: List = [], sdtype: str = 'numerical'):
+    def update_metadata(self, cols: List = [], sdtype: str = 'numerical') -> None:
+        """
+        Updates metadata for specified columns with a given data type.
+
+        Parameters:
+            cols (List[str]): The columns to update.
+            sdtype (str): The synthetic data type to apply.
+        """
 
         for c in cols:
             self.metadata.update_column(
@@ -86,23 +172,46 @@ class SynthLeader(object):
                 computer_representation='Float'
             )
 
-    def train_synthesizer(self, Model: CopulaGANSynthesizer | CTGANSynthesizer | GaussianCopulaSynthesizer, model_name: str = '', force: bool = False, params: Dict[str, Any] = {}):
+    def train_synthesizer(self, Model: CopulaGANSynthesizer | CTGANSynthesizer | GaussianCopulaSynthesizer, model_name: str = '', force: bool = False, params: Dict[str, Any] = {}) -> CTGANSynthesizer | CopulaGANSynthesizer | GaussianCopulaSynthesizer:
+        """
+        Trains a specified synthesizer model or loads an existing one based on the provided parameters.
+        If a model with the given name exists and `force` is not True, the existing model will be loaded instead.
 
-        if model_name != '':
-            model_name = str(self.models_dir / model_name)
+        Parameters:
+            Model: The synthesizer model class to be trained.
+            model_name: The name of the model file to save or load.
+            force: If True, forces retraining of the model even if it already exists.
+            params: Parameters to pass to the synthesizer model during initialization.
 
-        if not os.path.exists(model_name) or force:
-            print(
-                "Training model .. this may take several minutes or hours depending on the system.")
-            synthesizer = Model(**params)
-            synthesizer.fit(self.df)
+        Returns:
+            The trained or loaded synthesizer model.
+
+        Raises:
+            ValueError: If `models_dir` is not set, indicating where to save the figures.
+
+        """
+
+        if self.models_dir is None:
+            raise ValueError(
+                "models_dir is not set. Please specify a directory for saving models.")
+
+        model_path = self.models_dir / model_name if model_name else None
+
+        if model_path and model_path.exists() and not force:
+            print("Retrieving existing model")
+            synthesizer = Model.load(filepath=model_name)
 
         else:
-            print("Retrieving existing model")
-            synthesizer = Model.load(
-                filepath=model_name)
+            if model_path:
+                print(
+                    "Training model .. this may take several minutes or hours depending on the system.")
+                synthesizer = Model(**params) #type: ignore
+                synthesizer.fit(self.df)
+                synthesizer.save(filepath=str(model_path))
 
-        synthesizer.save(filepath=model_name)
+            else:
+                raise ValueError(
+                    "Model name must be provided to train or load a model.")
 
         return synthesizer
 
@@ -118,7 +227,7 @@ class SynthLeader(object):
         }
 
         synthesizer: GaussianCopulaSynthesizer = self.train_synthesizer(
-            Model=GaussianCopulaSynthesizer, model_name=model_name, force=force, params=params)
+            Model=GaussianCopulaSynthesizer, model_name=model_name, force=force, params=params)  # type: ignore
 
         return synthesizer
 
@@ -144,7 +253,7 @@ class SynthLeader(object):
         }
 
         synthesizer: CTGANSynthesizer = self.train_synthesizer(
-            Model=CTGANSynthesizer, model_name=model_name, force=force, params=params)
+            Model=CTGANSynthesizer, model_name=model_name, force=force, params=params)  # type: ignore
 
         return synthesizer
 
@@ -175,7 +284,7 @@ class SynthLeader(object):
         }
 
         synthesizer: CopulaGANSynthesizer = self.train_synthesizer(
-            Model=CopulaGANSynthesizer, model_name=model_name, force=force, params=params)
+            Model=CopulaGANSynthesizer, model_name=model_name, force=force, params=params)  # type: ignore
 
         return synthesizer
 
@@ -231,10 +340,30 @@ class SynthLeader(object):
 
 #         return {'loss': -score, 'status': STATUS_OK}
 
-    def generate_synthetic_sample(self, synthesizer, num_rows: int = 100):
+    def generate_synthetic_sample(self, synthesizer: CTGANSynthesizer | CopulaGANSynthesizer | GaussianCopulaSynthesizer, num_rows: int = 100) -> pd.DataFrame:
+        """
+        Generates a synthetic sample using a trained synthesizer model.
+
+        Parameters:
+            synthesizer (Union[CTGANSynthesizer, CopulaGANSynthesizer, GaussianCopulaSynthesizer]): The synthesizer model to use for sample generation.
+            num_rows (int): The number of rows to generate.
+
+        Returns:
+            pd.DataFrame: The generated synthetic sample.
+        """
         return synthesizer.sample(num_rows=num_rows)
 
-    def run_diagnostic(self, synthetic_data):
+    def run_diagnostic(self, synthetic_data: pd.DataFrame) -> DiagnosticReport:
+        """
+        Runs diagnostics to compare the real and synthetic data.
+
+        Parameters:
+            synthetic_data (pd.DataFrame): The synthetic data to compare against the real data.
+
+        Returns:
+            DiagnosticReport: Diagnostic results.
+        """
+
         diagnostic = run_diagnostic(
             real_data=self.df,
             synthetic_data=synthetic_data,
@@ -243,8 +372,16 @@ class SynthLeader(object):
 
         return diagnostic
 
-    def run_evaluation(self, synthetic_data):
+    def run_evaluation(self, synthetic_data) -> QualityReport:
+        """
+        Evaluates the quality of the synthetic data compared to the real data.
 
+        Parameters:
+            synthetic_data (pd.DataFrame): The synthetic data to evaluate.
+
+        Returns:
+            QualityReport: The quality score of the synthetic data.
+        """
         quality = evaluate_quality(
             real_data=self.df,
             synthetic_data=synthetic_data,
@@ -253,11 +390,30 @@ class SynthLeader(object):
 
         return quality
 
-    def visualize_evaluation(self, synthetic_data, data_name: str, demo_cols: List):
-        from table_evaluator import TableEvaluator
+    def visualize_evaluation(self, synthetic_data: pd.DataFrame, data_name: str, demo_cols: List) -> List[Path]:
+        """
+        Generates and saves visual evaluations of the synthetic data compared to the real data.
+
+        This function uses the `TableEvaluator` to create a series of plots that compare various
+        statistics and distributions between the real and synthetic data. It saves these plots in a
+        specific folder structure within the `figures_dir`.
+
+        Parameters:
+            synthetic_data (pd.DataFrame): The synthetic dataset to be evaluated.
+            data_name (str): A name identifier for the dataset, used to create a subdirectory for saving plots.
+            demo_cols (List[str]): A list of column names to be treated as categorical during the evaluation.
+
+        Returns:
+            List[Path]: A list of paths to the saved plot images.
+
+        Raises:
+            ValueError: If `figures_dir` is not set, indicating where to save the figures.
+        """
+        if self.figures_dir is None:
+            raise ValueError(
+                "figures_dir is not set. Please specify a directory for saving figures.")
 
         eval_folder = self.figures_dir / 'evaluations' / data_name
-
         eval_folder.mkdir(parents=True, exist_ok=True)
 
         te = TableEvaluator(self.df, synthetic_data, cat_cols=demo_cols)
@@ -273,42 +429,28 @@ class SynthLeader(object):
 
         return plot_list
 
-    def visualize_cumsum(self, synthetic_data, column_names: str | List, fig_name: Optional[str] = ''):
-        if isinstance(column_names, str):
-            column_names = [column_names]
+    def visualize_data(self, synthetic_data: pd.DataFrame, column_names: str | List, fig_name: Optional[str] = '', data_name: str = '') -> go.Figure:
+        """
+        Visualizes data comparisons between real and synthetic datasets for specified columns.
 
-        total_plots = len(column_names)
-        rows = math.ceil(math.sqrt(total_plots))
-        cols = math.ceil(total_plots / rows)
+        This function creates and saves a series of plots comparing real and synthetic data distributions
+        for each specified column name. Plots are saved to the specified figure name if provided.
 
-        fig = make_subplots(rows=rows, cols=cols, subplot_titles=column_names)
+        Parameters:
+            synthetic_data (pd.DataFrame): The synthetic dataset for comparison.
+            column_names (Union[str, List[str]]): Column name(s) to visualize. Can be a single column name as a string or a list of names.
+            fig_name (Optional[str]): The file name to save the figure to. If not provided, the figure is not saved.
+            data_name (str): The name of the data, used to organize saved plots into subdirectories.
 
-        for i, c in enumerate(column_names):
-            cumsum_real = self.df[c].cumsum()
-            cumsum_synthetic = synthetic_data[c].cumsum()
+        Returns:
+            go.Figure: The Plotly figure object containing the generated plots.
 
-            # Line plot for real data
-            real_trace = go.Scatter(
-                x=cumsum_real.index, y=cumsum_real, mode='lines', name='Real Data')
-
-            # Line plot for synthetic data
-            synthetic_trace = go.Scatter(
-                x=cumsum_synthetic.index, y=cumsum_synthetic, mode='lines', name='Synthetic Data')
-
-            fig.add_trace(real_trace, row=(i // cols) + 1, col=(i % cols) + 1)
-            fig.add_trace(synthetic_trace, row=(
-                i // cols) + 1, col=(i % cols) + 1)
-
-        fig.update_layout(height=rows * 300, width=cols * 300,
-                          title_text="Cumulative Sums of feature")
-
-        if fig_name != '':
-            fig_name = f"{self.figures_dir}/{fig_name}"
-            pio.write_image(fig, format="png", file=fig_name)
-
-        return fig
-
-    def visualize_data(self, synthetic_data, column_names: str | List, fig_name: Optional[str] = '', data_name: str = ''):
+        Raises:
+            ValueError: If `figures_dir` is not set, indicating where to save the figures.
+        """
+        if self.figures_dir is None:
+            raise ValueError(
+                "figures_dir is not set. Please specify a directory for saving figures.")
 
         eval_folder = self.figures_dir / 'evaluations' / data_name
         eval_folder.mkdir(parents=True, exist_ok=True)
@@ -331,23 +473,30 @@ class SynthLeader(object):
             )
 
             for trace in column_fig.data:
-                fig.add_trace(
-                    trace,
-                    row=(i // cols) + 1,
-                    col=(i % cols) + 1
-                )
+                fig.add_trace(trace, row=(i // cols) + 1, col=(i % cols) + 1)
 
         fig.update_layout(height=rows * 300, width=cols *
                           300, title_text="Column Plots")
 
-        if fig_name != '':
+        if fig_name:
             fig_name = f"{eval_folder}/{fig_name}"
-            print("Fig name: ", fig_name)
             pio.write_image(fig, format="png", file=fig_name)
 
         return fig
 
-    def get_corr_diff(self, corr_a, corr_b):
+    def get_corr_diff(self, corr_a: pd.DataFrame, corr_b: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculates the difference between two correlation matrices.
 
+        This method is useful for comparing the correlation matrices of real and synthetic data
+        to understand how closely the synthetic data mimics the real data in terms of variable interrelationships.
+
+        Parameters:
+            corr_a (pd.DataFrame): The first correlation matrix.
+            corr_b (pd.DataFrame): The second correlation matrix to subtract from the first.
+
+        Returns:
+            pd.DataFrame: A DataFrame representing the difference between the two correlation matrices.
+        """
         corr_diff = corr_a - corr_b
         return corr_diff
