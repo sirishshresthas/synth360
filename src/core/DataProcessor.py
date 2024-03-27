@@ -2,7 +2,7 @@ import pandas as pd
 from typing import List
 from src.core import LoadBlob
 import pingouin as pg
-
+import gc
 
 class DataProcessor(object):
 
@@ -155,6 +155,54 @@ class DataProcessor(object):
         }
 
         return stats
+    
+    def calculate_demographic_statistics(self, data, column, categories):
+        
+        ## dataframe for mean values
+        df_mean = data[data[column] \
+                    .isin(categories)] \
+                    .groupby(column)[self.items_cols] \
+                    .mean() \
+                    .round(3).T
+        
+        ## dataframe for std values
+        df_std = data[data[column] \
+                    .isin(categories)] \
+                    .groupby(column)[self.items_cols] \
+                    .std() \
+                    .round(3).T
+
+        ## cohen's d requires observation, so extracting observations from the data
+        cat1_data = data[data[column] == categories[0]][self.items_cols]
+        cat2_data = data[data[column] == categories[1]][self.items_cols]
+
+        # Calculate Cohen's d for each column
+        cohens_d_values = {col: round(pg.compute_effsize(cat1_data[col], cat2_data[col], eftype='cohen'),3) \
+                           for col in self.items_cols}
+
+        df_cohens_d = pd.DataFrame(cohens_d_values, index=[0])
+        df_cohens_d.index = ['Cohen\'s d']
+        df_cohens_d = df_cohens_d.transpose()
+
+        combined_mean_std = df_mean.astype(str) + ' (' + df_std.astype(str) + ')'
+        combined_mean_std = combined_mean_std.reset_index()
+
+        final_df = pd.merge(combined_mean_std, df_cohens_d, right_index=True, left_on='index', how='inner')
+        final_df = final_df.set_index('index')
+        final_df.index.name = None
+        
+        del(df_cohens_d)
+        del(combined_mean_std)
+        del(cat1_data)
+        del(cat2_data)
+        del(df_mean)
+        del(df_std)
+        
+        gc.collect()
+
+        return final_df
+        
+        
 
     def compare_datasets(self, real_data, synthetic_data, columns):
         real_stats = pd.DataFrame(self.calculate_statistics(real_data[columns]))
@@ -177,17 +225,16 @@ class DataProcessor(object):
 
         return stats, real_stats, synthetic_stats
 
-        # # interleave the dataframes
-        # result_df = pd.concat([pd.concat([row1, row2], axis=1).T for row1, row2 in zip(
-        #     real_stats.values, synthetic_stats.values)])
+    
+    def compare_demographics(self, real_data: pd.DataFrame, synthetic_data: pd.DataFrame, column: str, categories: List):
+        
+            
+        df_real = self.calculate_demographic_statistics(real_data, column, categories)
+        df_real.columns = df_real.columns.map(lambda x: x + "_real")
 
-        # # Reset index
-        # result_df.reset_index(drop=True, inplace=True)
+        df_synth = self.calculate_demographic_statistics(synthetic_data, column, categories)
+        df_synth.columns = df_synth.columns.map(lambda x: x + "_synth")
 
-        # # stats = pd.concat([
-        # #     pd.DataFrame(real_stats),
-        # #     pd.DataFrame(synthetic_stats),
-        # #     pd.DataFrame(differences)
-        # # ], keys=['Real', 'Synthetic', 'Differences'], axis=1)
-
-        # return result_df
+        df = pd.merge(df_real, df_synth, left_index=True, right_index=True, how='inner')
+        return df
+        
